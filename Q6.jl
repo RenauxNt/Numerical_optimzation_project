@@ -1,7 +1,7 @@
-using JuMP, Gurobi, CSV, DataFrames
+using JuMP, GLPK, CSV, DataFrames
 
 # Create a new JuMP model with Gurobi as the solver
-model = Model(Gurobi.Optimizer)
+model = Model(GLPK.Optimizer)
 
 #Loadings the CSV files
 stocks = CSV.read("data.csv", DataFrame)
@@ -53,61 +53,64 @@ if termination_status(model) == MOI.OPTIMAL
     end
 
     
-    println("Sensitivity Analysis for Sector Limit Change: \n")
+    println("\nSensitivity Analysis for Sector Limit Change: \n")
     step = 0.01
     N = 100
-    upper_bound = 0
-    lower_bound = 0
+    local limit_up_bound = 0
+    local limit_low_bound = 0
+    sector_six = findall(sectors[:,2] .== 6)
 
-    println("Positive delta l6 \n")
-    for i in N:
+    println("Positive delta l6")
+    for i in 1:N
         if(0.2 + i * step > 1)
             break
         end
 
-        sector_constraints[5] = @constraint(model, sum(parts[i] for i in sector_i) <= 0.2 + i * step) #selecting 6th constraint
+        delete(model, sector_constraints[5])
+        sector_constraints[5] = @constraint(model, sum(parts[i] for i in sector_six) <= 0.2 + i * step) #selecting 6th constraint
         optimize!(model)
 
         println("q_5: ", dual(sector_constraints[5])) #when dual becomes 0, the constraint is not binding anymore, it has to be greater than 0 in order to bind
         println("Actual upper bound: ", 0.2 + i * step)
 
         if(dual(sector_constraints[5]) == 0)
-            println("The constraint is not binding anymore, the upper bound is: ", upper_bound)
-            upper_bound = 0.2 + i * step
+            println("The constraint is not binding anymore, the upper bound is: ", limit_up_bound)
+            limit_up_bound = 0.2 + i * step
         end
     end
 
-    println("Negative delta l6 \n")
-    for i in N:
+    println("\n Negative delta l6")
+    for i in 1:N
         if(0.2 - i * step < 0)
             break
         end
-
-        sector_constraints[5] = @constraint(model, sum(parts[i] for i in sector_i) <= 0.2 - i * step) #selecting 6th constraint
+        
+        delete(model, sector_constraints[5])
+        sector_constraints[5] = @constraint(model, sum(parts[i] for i in sector_six) <= 0.2 - i * step) #selecting 6th constraint
         optimize!(model)
 
         println("q_5: ", dual(sector_constraints[5]))
         println("Actual lower bound: ", 0.2 - i * step)
 
         if(dual(sector_constraints[5]) == 0)
-            println("The constraint is not binding anymore, the lower bound is: ", lower_bound)
-            lower_bound = 0.2 - i * step
+            println("The constraint is not binding anymore, the lower bound is: ", limit_low_bound)
+            limit_low_bound = 0.2 - i * step
         end
     end
 
-    println("The range of the sector limit is: [", lower_bound, ", ", upper_bound, "]")
+    println("The range of the sector limit is: [", limit_low_bound, ", ", limit_up_bound, "]")
     #if we are out of this range the new optimal solution will be different
-    sector_constraints[5] = @constraint(model, sum(parts[i] for i in sector_i) <= upper_bound + 0.01) 
+    sector_constraints[5] = @constraint(model, sum(parts[i] for i in sector_six) <= limit_up_bound + 0.01) 
     optimize!(model)
     println("q_5: ", dual(sector_constraints[5]))
-    println("The constraint is not binding anymore, the upper bound is: ", upper_bound + 0.01)
+    println("The constraint is not binding anymore, the upper bound is: ", limit_up_bound + 0.01)
     println("The new optimal solution is: ", value.(parts))
     println("The new total return is: ", objective_value(model))
 
-    sector_constraints[5] = @constraint(model, sum(parts[i] for i in sector_i) <= lower_bound - 0.01)
+    sector_constraints[5] = @constraint(model, sum(parts[i] for i in sector_six) <= limit_low_bound - 0.01)
     optimize!(model)
     println("q_5: ", dual(sector_constraints[5]))
-    println("The constraint is not binding anymore, the lower bound is: ", lower_bound - 0.01)
+    println("The constraint is not binding anymore, the lower bound is: ", limit_low_bound - 0.01)
     println("The new optimal solution is: ", value.(parts))
     println("The new total return is: ", objective_value(model))
 
