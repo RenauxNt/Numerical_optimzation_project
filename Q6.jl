@@ -1,8 +1,29 @@
 using JuMP, GLPK, CSV, DataFrames
 
+# Create a function to extract key information and put it into a DataFrame
+function extract_sensitivity_report(report)
+    # Create an empty DataFrame with suitable column names
+    df = DataFrame(Constraint = String[], RHS = Float64[], Shadow_Price = Float64[], Allowable_Increase = Float64[], Allowable_Decrease = Float64[])
+    
+    for constraint_report in report
+        # Extract relevant information
+        constraint_name = constraint_report.name
+        rhs = constraint_report.rhs
+        shadow_price = constraint_report.shadow_price
+        allowable_increase = constraint_report.allowable_increase
+        allowable_decrease = constraint_report.allowable_decrease
+        
+        # Append row to DataFrame
+        push!(df, (constraint_name, rhs, shadow_price, allowable_increase, allowable_decrease))
+    end
+    
+    return df
+end
+
 # Create a new JuMP model with Gurobi as the solver
 model = Model(GLPK.Optimizer)
-
+set_optimizer_attribute(model, "Method", 0)  # Primal Simplex
+#set_optimizer_attribute(model, "Method", 1) # Dual Simplex
 #Loadings the CSV files
 stocks = CSV.read("data.csv", DataFrame)
 sectors = CSV.read("sector_mapping.csv", DataFrame, header=false)
@@ -14,8 +35,7 @@ num_sectors = unique(sectors[:,2])
 capital_intial = 500000
 
 # Variables
-c1 = @variable(model, parts[1:num_stocks] >= 0)
-#@variable(model, returns[1:num_stocks, new_weeks])
+@variable(model, parts[1:num_stocks] >= 0)
 
 # Constraints
 full_capital_constraint= @constraint(model, 0 <= sum(parts[i] for i in 1:num_stocks) <= 1)
@@ -28,15 +48,17 @@ end
 
 # Objective: maximize historical average weekly return.
 # We do not put the normalization factor in the objective function because it does not affect the optimal solution.
-@objective(model, Max, sum(((stocks[week, i]-stocks[week-1, i])/stocks[week-1, i])*parts[i] for i in 1:num_stocks, week in 2:num_weeks)/(num_weeks-1)*100)
+@objective(model, Max, sum(((stocks[week, i]-stocks[week-1, i])/stocks[week-1, i]) * parts[i] for i in 1:num_stocks, week in 2:num_weeks)*100/(num_weeks-1))
 
 # Solve the model
 optimize!(model)
 
 if termination_status(model) == MOI.OPTIMAL
-    println("\nSensitivity Analysis for Sector Limit Change: \n")
-    report = lp_sensitivity_report(model)
-    println(report)
+    # Generate the sensitivity report
+    sensitivity_report = lp_sensitivity_report(model)
+    exracted_sensitivity_report = extract_sensitivity_report(sensitivity_report)
+    println("\nSensitivity Analysis Report:")
+    println(exracted_sensitivity_report)
 
     optimal_allocation = value.(parts)
     index_parts = findall(optimal_allocation[:] .!= 0)
@@ -44,12 +66,17 @@ if termination_status(model) == MOI.OPTIMAL
     println("Optimal Portfolio Allocation:")
     for i in index_parts
         println(names(stocks)[i]," from secotr ", sectors[i,2] ," with ", (100000/stocks[1, i]), " shares and ", 
-                optimal_allocation[i]*100 ,"% of the capital invest and ", 
-                sum(((stocks[week, i]-stocks[week-1, i])/stocks[week-1, i]) for week in 2:num_weeks)/(num_weeks-1)*100, "% of weekly return")
+        sum(((stocks[week, i]-stocks[week-1, i])/stocks[week-1, i]) for week in 2:num_weeks)*100/(num_weeks-1), "% of weekly return")
     end
-    println("Total Historical Average Weekly Return:",  sum(((stocks[week, i]-stocks[week-1, i])/stocks[week-1, i]) for week in 2:num_weeks, i in index_parts)/(num_weeks-1)*100,"%")
-    println(total_return*5)
+    println("Total Historical Average Weekly Return:",  sum(((stocks[week, i]-stocks[week-1, i])/stocks[week-1, i]) for week in 2:num_weeks, i in index_parts)*100/(num_weeks-1),"%")
     println(optimal_allocation[index_parts])
+    println("\n DUAL VARIABLES \n")
+    println("p:  ", dual(full_capital_constraint))
+
+    # Dual values for sector allocation constraints
+    for (sector, constraint) in sector_constraints
+        println("q_", sector, " ", dual(constraint))
+    end
     
     # step = 0.01
     # N = 100

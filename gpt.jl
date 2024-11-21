@@ -1,5 +1,25 @@
 using JuMP, GLPK, CSV, DataFrames
 
+# Create a function to extract key information and put it into a DataFrame
+function extract_sensitivity_report(report)
+    # Create an empty DataFrame with suitable column names
+    df = DataFrame(Constraint = String[], RHS = Float64[], Shadow_Price = Float64[], Allowable_Increase = Float64[], Allowable_Decrease = Float64[])
+    
+    for constraint_report in report
+        # Extract relevant information
+        constraint_name = constraint_report.name
+        rhs = constraint_report.rhs
+        shadow_price = constraint_report.shadow_price
+        allowable_increase = constraint_report.allowable_increase
+        allowable_decrease = constraint_report.allowable_decrease
+        
+        # Append row to DataFrame
+        push!(df, (constraint_name, rhs, shadow_price, allowable_increase, allowable_decrease))
+    end
+    
+    return df
+end
+
 # Create a new JuMP model with Gurobi as the solver
 model = Model(GLPK.Optimizer)
 
@@ -35,10 +55,11 @@ optimize!(model)
 if termination_status(model) == MOI.OPTIMAL
     # Generate the sensitivity report
     sensitivity_report = lp_sensitivity_report(model)
+    test = sensitivity_report[sector_constraints[6]]
 
     # Display the sensitivity report
     println("\nSensitivity Analysis Report:")
-    println(sensitivity_report)
+    println(test)
 
 else
     println("No optimal solution found.")
