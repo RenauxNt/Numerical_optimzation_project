@@ -84,4 +84,11 @@ for gamma in Array(gammas)
     end
 end
 
-Plots.plot(risks, expected_returns)
+# Plot the efficient frontier
+Plots.plot(risks, expected_returns, label="Efficient Frontier", lw=2, size = (800, 600))
+Plots.title!("Evolution of the expected return as a function of the risk")
+Plots.xlabel!("Risk")
+Plots.ylabel!("Expected Return")
+Plots.xlims!(0, 40)
+Plots.ylims!(0, 0.4)
+Plots.savefig("efficient_frontier.pdf")
